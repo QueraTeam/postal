@@ -40,12 +40,23 @@ module Worker
       end
 
       # Obtain a queued message from the database for processing
-      #
+      # order by the server name suffix (numerically) descending, then by ID ascending
+      # example server names: server-1, server-2, server-9 -> order: server-9, server-2, server-1
       # @return [void]
       def lock_message_for_processing
-        QueuedMessage.where(ip_address_id: [nil, @ip_addresses])
+        QueuedMessage.joins(:server)
+                     .where(ip_address_id: [nil, @ip_addresses])
                      .where(locked_by: nil, locked_at: nil)
                      .ready_with_delayed_retry
+                     .order(
+                       Arel.sql(<<~SQL.squish)
+                         COALESCE(
+                           CAST(NULLIF(REGEXP_REPLACE(SUBSTRING_INDEX(servers.name, '-', -1), '[^0-9]', ''), '') AS UNSIGNED),
+                           0
+                         ) DESC,
+                         servers.id ASC
+                       SQL
+                     )
                      .limit(1)
                      .update_all(locked_by: @locker, locked_at: @lock_time)
       end
