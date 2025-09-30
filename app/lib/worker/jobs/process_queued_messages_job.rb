@@ -48,7 +48,15 @@ module Worker
                      .where(ip_address_id: [nil, @ip_addresses])
                      .where(locked_by: nil, locked_at: nil)
                      .ready_with_delayed_retry
-                     .order(Arel.sql("CAST(SUBSTRING_INDEX(servers.name, '-', -1) AS UNSIGNED) DESC, queued_messages.id ASC"))
+                     .order(
+                       Arel.sql(<<~SQL.squish)
+                         COALESCE(
+                           CAST(NULLIF(REGEXP_REPLACE(SUBSTRING_INDEX(servers.name, '-', -1), '[^0-9]', ''), '') AS UNSIGNED),
+                           0
+                         ) DESC,
+                         servers.id ASC
+                       SQL
+                     )
                      .limit(1)
                      .update_all(locked_by: @locker, locked_at: @lock_time)
       end
